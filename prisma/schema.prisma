@@ -1,0 +1,58 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Whiteboard {
+  id          String       @id @default(cuid())
+  name        String
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  notes       Note[]
+  connections Connection[]
+}
+
+model Note {
+  id            String      @id @default(cuid())
+  title         String
+  content       String?
+  color         String      @default("yellow")
+  priority      String      @default("medium")
+  dueDate       DateTime?
+  done          Boolean     @default(false)
+  reminderAt    DateTime?
+  reminderSent  Boolean     @default(false)
+  x             Float       @default(100)
+  y             Float       @default(100)
+  boardId       String?
+  board         Whiteboard? @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  connectionsFrom Connection[] @relation("ConnFrom")
+  connectionsTo   Connection[] @relation("ConnTo")
+}
+
+model Connection {
+  id         String     @id @default(cuid())
+  label      String?
+  boardId    String
+  board      Whiteboard @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  fromNoteId String
+  fromNote   Note       @relation("ConnFrom", fields: [fromNoteId], references: [id], onDelete: Cascade)
+  toNoteId   String
+  toNote     Note       @relation("ConnTo",   fields: [toNoteId],   references: [id], onDelete: Cascade)
+  createdAt  DateTime   @default(now())
+}
+
+model PushSubscription {
+  id        String   @id @default(cuid())
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+}
