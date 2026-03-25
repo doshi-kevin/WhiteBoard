@@ -15,15 +15,13 @@ export async function GET(req: Request) {
   }
 
   const now = new Date();
-  // Window: fire reminders that are between 5 min ago and 1 min in the future
-  const windowStart = new Date(now.getTime() - 5 * 60 * 1000);
-  const windowEnd   = new Date(now.getTime() + 60 * 1000);
 
+  // Send all unsent reminders that are due up to now (catches anything missed since last run)
   const notes = await prisma.note.findMany({
     where: {
       reminderSent: false,
       done: false,
-      reminderAt: { gte: windowStart, lte: windowEnd },
+      reminderAt: { lte: now },
     },
   });
 
