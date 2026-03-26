@@ -202,21 +202,26 @@ export default function StickyNote({ note, onDelete, onToggleDone, onEdit }: Pro
         </div>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 pl-5 pr-3 pt-3 pb-1">
+      {/* Content — fixed height, scrollable */}
+      <div
+        data-note-content
+        className="pl-5 pr-3 pt-3 pb-1"
+        style={{ height: "200px", overflowY: "auto", overflowX: "hidden" }}
+      >
         {note.content ? (
           <p
             className="font-handwriting leading-relaxed break-words font-semibold"
             style={{
-              fontSize: "18px",
+              fontSize: "15px",
               color: note.done ? "#9ca3af" : "#1f2937",
               textDecoration: note.done ? "line-through" : "none",
+              whiteSpace: "pre-wrap",
             }}
           >
             {note.content}
           </p>
         ) : (
-          <p className="font-handwriting italic" style={{ fontSize: "15px", color: c.text, opacity: 0.25 }}>
+          <p className="font-handwriting italic" style={{ fontSize: "14px", color: c.text, opacity: 0.25 }}>
             no details...
           </p>
         )}

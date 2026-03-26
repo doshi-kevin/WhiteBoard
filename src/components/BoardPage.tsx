@@ -1,13 +1,17 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import StickyNote, { Note } from "./StickyNote";
 import ConnectionLayer, { Connection } from "./ConnectionLayer";
 import AddNoteModal from "./AddNoteModal";
 import BoardHeader from "./BoardHeader";
 
-const CANVAS_W = 4000;
-const CANVAS_H = 3000;
+const CANVAS_W = 5000;
+const CANVAS_H = 4500;
+const ZOOM_MIN = 0.1;
+const ZOOM_MAX = 3;
+const ZOOM_DEFAULT = 0.45;
+const PAN_DEFAULT = { x: 40, y: 40 };
 
 interface Props {
   boardId: string;
@@ -30,30 +34,113 @@ export default function BoardPage({
   const [showModal,   setShowModal]   = useState(false);
   const [editNote,    setEditNote]    = useState<Note | null>(null);
 
-  const dragRef = useRef<{
+  // ─── Zoom / Pan state ───────────────────────────────────────────────────────
+  const [zoom, setZoom] = useState(ZOOM_DEFAULT);
+  const [pan,  setPan]  = useState(PAN_DEFAULT);
+
+  // Refs so pointer handlers always read the latest values without stale closures
+  const zoomRef = useRef(ZOOM_DEFAULT);
+  const panRef  = useRef(PAN_DEFAULT);
+
+  function applyTransform(z: number, p: { x: number; y: number }) {
+    zoomRef.current = z;
+    panRef.current  = p;
+    setZoom(z);
+    setPan(p);
+  }
+
+  // ─── Note drag ──────────────────────────────────────────────────────────────
+  const noteDragRef = useRef<{
     noteId:  string;
     startPx: number; startPy: number;
     startNx: number; startNy: number;
   } | null>(null);
 
+  // ─── Canvas pan ─────────────────────────────────────────────────────────────
+  const bgPanRef = useRef<{
+    startPx: number; startPy: number;
+    startPanX: number; startPanY: number;
+  } | null>(null);
+
+  const viewportRef = useRef<HTMLDivElement>(null);
+
   const positions = Object.fromEntries(
     notes.map((n) => [n.id, { x: n.x ?? 100, y: n.y ?? 100 }])
   );
 
-  // Escape exits connect mode
+  // ─── Wheel: zoom (pinch / Ctrl+scroll) OR pan (two-finger swipe) ────────────
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (!el) return;
+    function onWheel(e: WheelEvent) {
+      if (e.ctrlKey) {
+        // ── Pinch-to-zoom (trackpad) or Ctrl+scroll (mouse) ──
+        e.preventDefault();
+        const curZoom = zoomRef.current;
+        // trackpad pinch gives small deltaY; mouse wheel gives large — handle both
+        const factor  = Math.pow(0.998, e.deltaY);
+        const newZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, curZoom * factor));
+        const rect    = el!.getBoundingClientRect();
+        const mx      = e.clientX - rect.left;
+        const my      = e.clientY - rect.top;
+        const curPan  = panRef.current;
+        const newPanX = mx - (mx - curPan.x) * (newZoom / curZoom);
+        const newPanY = my - (my - curPan.y) * (newZoom / curZoom);
+        applyTransform(newZoom, { x: newPanX, y: newPanY });
+      } else {
+        // ── Two-finger swipe / scroll wheel → pan the canvas ──
+        // But if pointer is over a scrollable note content, let THAT scroll instead
+        const target = e.target as HTMLElement;
+        const noteContent = target.closest("[data-note-content]") as HTMLElement | null;
+        if (noteContent) {
+          // Let the browser scroll the note content naturally
+          return;
+        }
+        e.preventDefault();
+        const p = panRef.current;
+        const newPan = { x: p.x - e.deltaX, y: p.y - e.deltaY };
+        panRef.current = newPan;
+        setPan(newPan);
+      }
+    }
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
+
+  // ─── Keyboard ───────────────────────────────────────────────────────────────
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") { setPendingFrom(null); setConnectMode(false); }
+      // +/= to zoom in, - to zoom out, 0 to reset
+      if (e.key === "=" || e.key === "+") zoomBy(1.15);
+      if (e.key === "-")                  zoomBy(0.87);
+      if (e.key === "0")                  applyTransform(1, PAN_DEFAULT);
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // ─── Drag ──────────────────────────────────────────────────────────────────
-  function onPointerDown(e: React.PointerEvent<HTMLDivElement>, note: Note) {
+  function zoomBy(factor: number) {
+    const z = zoomRef.current;
+    const newZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z * factor));
+    // Zoom around center of viewport
+    const el = viewportRef.current;
+    if (!el) { applyTransform(newZoom, panRef.current); return; }
+    const rect = el.getBoundingClientRect();
+    const mx = rect.width  / 2;
+    const my = rect.height / 2;
+    const p  = panRef.current;
+    applyTransform(newZoom, {
+      x: mx - (mx - p.x) * (newZoom / z),
+      y: my - (my - p.y) * (newZoom / z),
+    });
+  }
+
+  // ─── Note dragging ──────────────────────────────────────────────────────────
+  function onNotePointerDown(e: React.PointerEvent<HTMLDivElement>, note: Note) {
     if (connectMode) return;
     if ((e.target as HTMLElement).closest("button, input, textarea, select, a")) return;
-    dragRef.current = {
+    noteDragRef.current = {
       noteId:  note.id,
       startPx: e.clientX, startPy: e.clientY,
       startNx: note.x ?? 100, startNy: note.y ?? 100,
@@ -63,35 +150,59 @@ export default function BoardPage({
     e.stopPropagation();
   }
 
-  function onPointerMove(e: React.PointerEvent<HTMLDivElement>) {
-    if (!dragRef.current) return;
-    // Destructure before setNotes so the async updater doesn't read a stale ref
-    const { noteId, startNx, startNy, startPx, startPy } = dragRef.current;
-    const nx = Math.max(0, startNx + e.clientX - startPx);
-    const ny = Math.max(0, startNy + e.clientY - startPy);
+  function onNotePointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    if (!noteDragRef.current) return;
+    const { noteId, startNx, startNy, startPx, startPy } = noteDragRef.current;
+    const z  = zoomRef.current;
+    const nx = Math.max(0, startNx + (e.clientX - startPx) / z);
+    const ny = Math.max(0, startNy + (e.clientY - startPy) / z);
     setNotes((prev) => prev.map((n) => (n.id === noteId ? { ...n, x: nx, y: ny } : n)));
   }
 
-  async function onPointerUp(e: React.PointerEvent<HTMLDivElement>, note: Note) {
-    if (!dragRef.current || dragRef.current.noteId !== note.id) return;
-    const dx = e.clientX - dragRef.current.startPx;
-    const dy = e.clientY - dragRef.current.startPy;
-
-    if (Math.abs(dx) >= 5 || Math.abs(dy) >= 5) {
-      const nx = Math.max(0, dragRef.current.startNx + dx);
-      const ny = Math.max(0, dragRef.current.startNy + dy);
+  async function onNotePointerUp(e: React.PointerEvent<HTMLDivElement>, note: Note) {
+    if (!noteDragRef.current || noteDragRef.current.noteId !== note.id) return;
+    const z  = zoomRef.current;
+    const dx = (e.clientX - noteDragRef.current.startPx) / z;
+    const dy = (e.clientY - noteDragRef.current.startPy) / z;
+    if (Math.abs(dx) >= 3 || Math.abs(dy) >= 3) {
+      const nx = Math.max(0, noteDragRef.current.startNx + dx);
+      const ny = Math.max(0, noteDragRef.current.startNy + dy);
       fetch(`/api/notes/${note.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ x: nx, y: ny }),
       });
     }
-    dragRef.current = null;
-
+    noteDragRef.current = null;
     setDraggingId(null);
   }
 
-  // ─── Connect mode ──────────────────────────────────────────────────────────
+  // ─── Canvas background pan ──────────────────────────────────────────────────
+  function onCanvasBgDown(e: React.PointerEvent<HTMLDivElement>) {
+    if (connectMode) return;
+    if ((e.target as HTMLElement).closest("button, input, textarea, select, a")) return;
+    bgPanRef.current = {
+      startPx: e.clientX, startPy: e.clientY,
+      startPanX: panRef.current.x,
+      startPanY: panRef.current.y,
+    };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  }
+
+  function onCanvasBgMove(e: React.PointerEvent<HTMLDivElement>) {
+    if (!bgPanRef.current) return;
+    const dx = e.clientX - bgPanRef.current.startPx;
+    const dy = e.clientY - bgPanRef.current.startPy;
+    const p  = { x: bgPanRef.current.startPanX + dx, y: bgPanRef.current.startPanY + dy };
+    panRef.current = p;
+    setPan(p);
+  }
+
+  function onCanvasBgUp() {
+    bgPanRef.current = null;
+  }
+
+  // ─── Connect mode ───────────────────────────────────────────────────────────
   function handleConnectClick(noteId: string) {
     if (pendingFrom === null) {
       setPendingFrom(noteId);
@@ -128,7 +239,7 @@ export default function BoardPage({
     );
   }
 
-  // ─── Note CRUD ─────────────────────────────────────────────────────────────
+  // ─── Note CRUD ──────────────────────────────────────────────────────────────
   function handleDelete(id: string) {
     setNotes((prev) => prev.filter((n) => n.id !== id));
     setConnections((prev) => prev.filter((c) => c.fromNoteId !== id && c.toNoteId !== id));
@@ -149,8 +260,10 @@ export default function BoardPage({
 
   function nextPosition() {
     const idx = notes.length;
-    return { x: 80 + (idx % 6) * 310, y: 80 + Math.floor(idx / 6) * 320 };
+    return { x: 80 + (idx % 6) * 420, y: 80 + Math.floor(idx / 6) * 520 };
   }
+
+  const zoomPct = Math.round(zoom * 100);
 
   return (
     <div className="flex flex-col" style={{ height: "100vh", overflow: "hidden" }}>
@@ -163,13 +276,30 @@ export default function BoardPage({
         onAddNote={() => { setEditNote(null); setShowModal(true); }}
       />
 
-      {/* Scrollable canvas area */}
-      <div className="flex-1 overflow-auto" style={{ background: "#7a4b1a" }}>
+      {/* Viewport — overflow:hidden, all navigation via transform */}
+      <div
+        ref={viewportRef}
+        className="flex-1 relative overflow-hidden"
+        style={{
+          background: "#7a4b1a",
+          cursor: bgPanRef.current ? "grabbing" : connectMode ? "default" : "grab",
+        }}
+      >
+        {/* Transformed canvas */}
         <div
-          className="cork-board relative"
-          style={{ width: CANVAS_W, height: CANVAS_H }}
+          className="cork-board absolute"
+          style={{
+            width:           CANVAS_W,
+            height:          CANVAS_H,
+            transformOrigin: "0 0",
+            transform:       `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+            willChange:      "transform",
+          }}
+          onPointerDown={onCanvasBgDown}
+          onPointerMove={onCanvasBgMove}
+          onPointerUp={onCanvasBgUp}
         >
-          {/* SVG arrows layer (behind notes) */}
+          {/* SVG arrows layer */}
           <ConnectionLayer
             connections={connections}
             positions={positions}
@@ -184,28 +314,24 @@ export default function BoardPage({
             <div
               key={note.id}
               style={{
-                position: "absolute",
-                left:     note.x ?? 100,
-                top:      note.y ?? 100,
-                zIndex:   draggingId === note.id ? 100 : 10,
-                cursor:   connectMode ? "pointer" : "grab",
+                position:   "absolute",
+                left:       note.x ?? 100,
+                top:        note.y ?? 100,
+                zIndex:     draggingId === note.id ? 100 : 10,
+                cursor:     connectMode ? "pointer" : draggingId === note.id ? "grabbing" : "grab",
                 userSelect: "none",
               }}
-              onPointerDown={(e) => onPointerDown(e, note)}
-              onPointerMove={onPointerMove}
-              onPointerUp={(e) => onPointerUp(e, note)}
+              onPointerDown={(e) => onNotePointerDown(e, note)}
+              onPointerMove={onNotePointerMove}
+              onPointerUp={(e) => onNotePointerUp(e, note)}
               onClick={(e) => {
                 if (!connectMode) return;
-                // Only trigger connect if clicking note body, not its buttons
                 if ((e.target as HTMLElement).closest("button")) return;
                 handleConnectClick(note.id);
               }}
             >
-              {/* Selection ring in connect mode */}
               {connectMode && pendingFrom === note.id && (
-                <div
-                  className="absolute -inset-2 rounded-xl border-4 border-indigo-500 z-20 pointer-events-none animate-pulse_badge"
-                />
+                <div className="absolute -inset-2 rounded-xl border-4 border-indigo-500 z-20 pointer-events-none animate-pulse_badge" />
               )}
               <StickyNote
                 note={note}
@@ -218,12 +344,58 @@ export default function BoardPage({
             </div>
           ))}
         </div>
+
+        {/* ── Zoom controls ── */}
+        <div
+          className="absolute bottom-5 right-5 flex items-center gap-1 z-50"
+          style={{ pointerEvents: "all" }}
+        >
+          <button
+            onClick={() => zoomBy(0.8)}
+            className="w-8 h-8 rounded-lg text-lg font-bold flex items-center justify-center shadow-lg transition-all hover:scale-110"
+            style={{ background: "rgba(255,255,255,0.18)", backdropFilter: "blur(6px)", color: "#fff", border: "1px solid rgba(255,255,255,0.3)" }}
+            title="Zoom out (−)"
+          >−</button>
+
+          <button
+            onClick={() => applyTransform(1, PAN_DEFAULT)}
+            className="h-8 px-3 rounded-lg text-xs font-bold flex items-center justify-center shadow-lg transition-all hover:scale-105 min-w-[52px]"
+            style={{ background: "rgba(255,255,255,0.18)", backdropFilter: "blur(6px)", color: "#fff", border: "1px solid rgba(255,255,255,0.3)" }}
+            title="Reset zoom (0)"
+          >
+            {zoomPct}%
+          </button>
+
+          <button
+            onClick={() => zoomBy(1.25)}
+            className="w-8 h-8 rounded-lg text-lg font-bold flex items-center justify-center shadow-lg transition-all hover:scale-110"
+            style={{ background: "rgba(255,255,255,0.18)", backdropFilter: "blur(6px)", color: "#fff", border: "1px solid rgba(255,255,255,0.3)" }}
+            title="Zoom in (+)"
+          >+</button>
+
+          <button
+            onClick={() => applyTransform(ZOOM_DEFAULT, PAN_DEFAULT)}
+            className="h-8 px-3 rounded-lg text-xs font-bold flex items-center justify-center shadow-lg transition-all hover:scale-105 ml-1"
+            style={{ background: "rgba(255,255,255,0.15)", backdropFilter: "blur(6px)", color: "#fff", border: "1px solid rgba(255,255,255,0.3)" }}
+            title="Fit to overview"
+          >
+            Fit
+          </button>
+        </div>
+
+        {/* Zoom hint */}
+        <div
+          className="absolute bottom-5 left-1/2 -translate-x-1/2 text-xs font-semibold z-40 pointer-events-none"
+          style={{ color: "rgba(255,255,255,0.45)" }}
+        >
+          Scroll to zoom · Drag background to pan · Drag notes to move
+        </div>
       </div>
 
       {/* Connect mode toast */}
       {connectMode && (
         <div
-          className="fixed bottom-6 left-1/2 -translate-x-1/2 px-6 py-2.5 rounded-full
+          className="fixed bottom-16 left-1/2 -translate-x-1/2 px-6 py-2.5 rounded-full
                      text-sm font-semibold text-white shadow-xl z-50 flex items-center gap-2"
           style={{ background: "rgba(79,70,229,0.93)", backdropFilter: "blur(6px)" }}
         >
