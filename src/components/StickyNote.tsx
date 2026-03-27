@@ -182,20 +182,24 @@ export default function StickyNote({ note, onDelete, onToggleDone, onEdit }: Pro
           {note.title}
         </span>
 
-        <div className="flex items-center gap-1 shrink-0 mt-1">
+        <div className="flex items-center gap-0.5 shrink-0 mt-0.5">
           <button
+            onPointerDown={(e) => e.stopPropagation()}
             onClick={() => onEdit(note)}
             title="Edit note"
-            className="text-base opacity-40 hover:opacity-90 transition-opacity"
-            style={{ color: "rgba(0,0,0,0.7)" }}
+            className="w-7 h-7 rounded-md flex items-center justify-center text-sm
+                       opacity-50 hover:opacity-100 hover:bg-black/10 transition-all"
+            style={{ color: "rgba(0,0,0,0.8)" }}
           >
             ✏
           </button>
           <button
+            onPointerDown={(e) => e.stopPropagation()}
             onClick={handleDelete}
             title="Delete note"
-            className="text-base opacity-40 hover:opacity-90 hover:text-red-700 transition-all font-black"
-            style={{ color: "rgba(0,0,0,0.7)" }}
+            className="w-7 h-7 rounded-md flex items-center justify-center text-sm font-black
+                       opacity-50 hover:opacity-100 hover:bg-red-500/20 hover:text-red-700 transition-all"
+            style={{ color: "rgba(0,0,0,0.8)" }}
           >
             ✕
           </button>

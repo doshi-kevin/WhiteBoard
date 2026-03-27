@@ -28,6 +28,7 @@ export default function BoardList({ initialBoards }: Props) {
   const [creating, setCreating] = useState(false);
   const [newName,  setNewName]  = useState("");
   const [saving,   setSaving]   = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const router = useRouter();
 
   async function createBoard() {
@@ -45,6 +46,25 @@ export default function BoardList({ initialBoards }: Props) {
     setSaving(false);
   }
 
+  async function deleteBoard(e: React.MouseEvent, board: BoardSummary) {
+    e.preventDefault();
+    e.stopPropagation();
+    const msg = board._count.notes > 0
+      ? `Delete "${board.name}" and its ${board._count.notes} note${board._count.notes !== 1 ? "s" : ""}? This cannot be undone.`
+      : `Delete "${board.name}"? This cannot be undone.`;
+    if (!window.confirm(msg)) return;
+    setDeletingId(board.id);
+    try {
+      const res = await fetch(`/api/boards/${board.id}`, { method: "DELETE" });
+      if (res.ok) {
+        setBoards((prev) => prev.filter((b) => b.id !== board.id));
+      }
+    } catch {
+      // ignore
+    }
+    setDeletingId(null);
+  }
+
   return (
     <div className="p-6">
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-5">
@@ -52,11 +72,29 @@ export default function BoardList({ initialBoards }: Props) {
           <a
             key={board.id}
             href={`/board/${board.id}`}
-            className="group relative bg-white rounded-2xl overflow-hidden shadow-lg
+            className={`group relative bg-white rounded-2xl overflow-hidden shadow-lg
                        hover:shadow-2xl hover:-translate-y-1.5 transition-all duration-200
-                       border-2 border-transparent hover:border-white/50 cursor-pointer"
+                       border-2 border-transparent hover:border-white/50 cursor-pointer
+                       ${deletingId === board.id ? "opacity-50 pointer-events-none scale-95" : ""}`}
             style={{ boxShadow: "0 4px 20px rgba(0,0,0,0.2)" }}
           >
+            {/* Delete button */}
+            <button
+              onClick={(e) => deleteBoard(e, board)}
+              title={`Delete "${board.name}"`}
+              className="absolute top-1.5 right-1.5 z-30 w-7 h-7 rounded-full
+                         flex items-center justify-center text-sm font-black
+                         opacity-0 group-hover:opacity-100 transition-all
+                         hover:scale-110 active:scale-95"
+              style={{
+                background: "rgba(239,68,68,0.9)",
+                color: "white",
+                boxShadow: "0 2px 8px rgba(239,68,68,0.4)",
+              }}
+            >
+              ✕
+            </button>
+
             {/* Colored top stripe */}
             <div
               className="h-3 w-full"
@@ -73,7 +111,7 @@ export default function BoardList({ initialBoards }: Props) {
             {/* Hover overlay */}
             <div
               className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity
-                         flex items-center justify-center"
+                         flex items-center justify-center pointer-events-none"
               style={{ background: "rgba(99,102,241,0.08)" }}
             >
               <span className="bg-indigo-500 text-white text-xs font-bold px-3 py-1.5 rounded-full shadow">

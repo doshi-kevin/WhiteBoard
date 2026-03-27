@@ -78,7 +78,7 @@ export default function BoardPage({
         e.preventDefault();
         const curZoom = zoomRef.current;
         // trackpad pinch gives small deltaY; mouse wheel gives large — handle both
-        const factor  = Math.pow(0.998, e.deltaY);
+        const factor  = Math.pow(0.994, e.deltaY);
         const newZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, curZoom * factor));
         const rect    = el!.getBoundingClientRect();
         const mx      = e.clientX - rect.left;
@@ -98,7 +98,7 @@ export default function BoardPage({
         }
         e.preventDefault();
         const p = panRef.current;
-        const newPan = { x: p.x - e.deltaX, y: p.y - e.deltaY };
+        const newPan = { x: p.x - e.deltaX * 1.8, y: p.y - e.deltaY * 1.8 };
         panRef.current = newPan;
         setPan(newPan);
       }
