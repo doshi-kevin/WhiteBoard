@@ -11,6 +11,9 @@ const caveat = Caveat({
 export const metadata: Metadata = {
   title: "My Whiteboard",
   description: "Personal sticky notes board",
+  icons: {
+    icon: "/favicon.svg",
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Corkboard background -->
+  <rect width="64" height="64" rx="12" fill="#b5651d"/>
+  <rect x="4" y="4" width="56" height="56" rx="9" fill="#c97d3a"/>
+  <!-- Sticky note -->
+  <rect x="12" y="16" width="40" height="36" rx="3" fill="#fef08a" transform="rotate(-3 32 34)"/>
+  <rect x="12" y="16" width="40" height="8" rx="3" fill="#facc15" transform="rotate(-3 32 34)"/>
+  <!-- Pushpin -->
+  <circle cx="32" cy="14" r="6" fill="#dc2626" stroke="#fff" stroke-width="2"/>
+  <circle cx="32" cy="14" r="2.5" fill="#ef4444"/>
+  <rect x="31" y="19" width="2" height="5" rx="1" fill="#991b1b"/>
+  <!-- Lines on note -->
+  <line x1="18" y1="30" x2="44" y2="29" stroke="#d4a017" stroke-width="1.5" stroke-linecap="round" opacity="0.5"/>
+  <line x1="18" y1="36" x2="40" y2="35" stroke="#d4a017" stroke-width="1.5" stroke-linecap="round" opacity="0.5"/>
+  <line x1="18" y1="42" x2="36" y2="41" stroke="#d4a017" stroke-width="1.5" stroke-linecap="round" opacity="0.5"/>
+</svg>
