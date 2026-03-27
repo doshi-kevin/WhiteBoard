@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import StickyNote, { Note } from "./StickyNote";
 import ConnectionLayer, { Connection } from "./ConnectionLayer";
 import AddNoteModal from "./AddNoteModal";
+import NoteDetailView from "./NoteDetailView";
 import BoardHeader from "./BoardHeader";
 
 const CANVAS_W = 5000;
@@ -33,6 +34,7 @@ export default function BoardPage({
   const [draggingId,  setDraggingId]  = useState<string | null>(null);
   const [showModal,   setShowModal]   = useState(false);
   const [editNote,    setEditNote]    = useState<Note | null>(null);
+  const [viewNote,    setViewNote]    = useState<Note | null>(null);
 
   // ─── Zoom / Pan state ───────────────────────────────────────────────────────
   const [zoom, setZoom] = useState(ZOOM_DEFAULT);
@@ -172,6 +174,9 @@ export default function BoardPage({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ x: nx, y: ny }),
       });
+    } else if (!(e.target as HTMLElement).closest("button, input, textarea, select, a")) {
+      // Click (not drag) — open detail view
+      setViewNote(note);
     }
     noteDragRef.current = null;
     setDraggingId(null);
@@ -404,6 +409,16 @@ export default function BoardPage({
             ? "Click another note to connect · Esc to cancel"
             : "Click a note to start a connection · Esc to exit"}
         </div>
+      )}
+
+      {viewNote && (
+        <NoteDetailView
+          note={notes.find((n) => n.id === viewNote.id) ?? viewNote}
+          onClose={() => setViewNote(null)}
+          onEdit={(n) => { setViewNote(null); setEditNote(n); setShowModal(true); }}
+          onToggleDone={handleToggleDone}
+          onDelete={(id) => { handleDelete(id); setViewNote(null); }}
+        />
       )}
 
       {showModal && (
